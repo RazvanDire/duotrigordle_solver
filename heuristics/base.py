@@ -1,8 +1,6 @@
 
-from typing import Tuple, List, Dict
-import sys
-sys.path.append('..')
-from board_info import BoardInfo
+from typing import List, Dict, Tuple
+
 
 class Heuristic():
 	def __init__(self):
@@ -18,7 +16,9 @@ class Heuristic():
     	""" 
 		pass
 
-	def rank_words(self, board_info: BoardInfo) -> Tuple[str, int]:
+	def rank_words(
+        self, possible_guesses: List[str], letter_ranking: List[Dict[str, int]]
+    ) -> Tuple[str, int]:
 		"""
 		Computes score for every possible guess, based on the information
 		available on the board.
