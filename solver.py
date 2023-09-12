@@ -4,8 +4,6 @@ from wordlist import WORDS_TARGET
 from typing import List, Dict, Tuple
 from heuristics.base import Heuristic
 from board_info import BoardInfo
-import time
-
 
 class Solver:
     GREEN = "bg-[#49d088]"
@@ -23,35 +21,23 @@ class Solver:
         await page.keyboard.type(word)
         await page.keyboard.press("Enter")
 
-    async def __update_board__(self, board: Locator, board_index: int) -> None:
-        print("Start" , time.time() * 1000)
-        last_guess = await board.locator(".word").all()
-        last_guess = last_guess[-2]
+    async def __update_board__(
+        self, letter_class_attributes, letter_text, board_index: int
+    ) -> None:
+        for index in range(5):
+            text = letter_text[index]
+            classes = letter_class_attributes[index]
 
-        print("First find", time.time() * 1000)
-        letters = await last_guess.locator(".letter").all()
-        print("2nd find", time.time() * 1000)
-
-        for index, letter in enumerate(letters):
-            classes = await letter.get_attribute("class")
-            text = await letter.all_inner_texts()
-            text = text[0]
-            print(3, time.time() * 1000)
             if self.GREEN in classes:
                 self.boards[board_index].greens[index] = text
             if self.YELLOW in classes:
                 self.boards[board_index].yellows.add((text, index))
 
-        print(4, time.time() * 1000)
-
-        for index, letter in enumerate(letters):
-            classes = await letter.get_attribute("class")
-            print(5, time.time() * 1000)
+        for index in range(5):
+            text = letter_text[index]
+            classes = letter_class_attributes[index]
 
             if self.GRAY in classes:
-                text = await letter.all_inner_texts()
-                text = text[0]
-
                 if text in [yellow[0] for yellow in self.boards[board_index].yellows]:
                     self.boards[board_index].yellows.add((text, index))
                 elif text in [
@@ -71,17 +57,43 @@ class Solver:
                 board_info.possible_guesses
             )
 
-        print(6, time.time() * 1000)
-
     async def __scan_boards__(self) -> None:
-        for index, board in enumerate(self.web_boards):
-            if "opacity-25" in await board.get_attribute("class"):
-                self.boards[index].won = True
-            if (
-                not self.boards[index].won
-                and len(self.boards[index].possible_guesses) > 1
-            ):
-                await self.__update_board__(board, index)
+        last_guesses = await asyncio.gather(
+            *[board.locator(".word").all() for board in self.web_boards]
+        )
+        last_guesses = [guess[-2] for guess in last_guesses]
+
+        letters = await asyncio.gather(
+            *[Locator(guess).locator(".letter").all() for guess in last_guesses]
+        )
+
+        letters_info = await asyncio.gather(
+            *[Locator(letter[0]).get_attribute("class") for letter in letters],
+            *[Locator(letter[1]).get_attribute("class") for letter in letters],
+            *[Locator(letter[2]).get_attribute("class") for letter in letters],
+            *[Locator(letter[3]).get_attribute("class") for letter in letters],
+            *[Locator(letter[4]).get_attribute("class") for letter in letters],
+            *[Locator(letter[0]).all_inner_texts() for letter in letters],
+            *[Locator(letter[1]).all_inner_texts() for letter in letters],
+            *[Locator(letter[2]).all_inner_texts() for letter in letters],
+            *[Locator(letter[3]).all_inner_texts() for letter in letters],
+            *[Locator(letter[4]).all_inner_texts() for letter in letters]
+        )
+
+        letters_class_attributes = [
+            [letters_info[i + j * 32] for j in range(5)] for i in range(32)
+        ]
+        letters_text = [
+            [letters_info[i + (j + 5) * 32][0] for j in range(5)] for i in range(32)
+        ]
+
+        for i in range(32):
+            if "opacity-25" in await self.web_boards[i].get_attribute("class"):
+                self.boards[i].won = True
+            if not self.boards[i].won and len(self.boards[i].possible_guesses) > 1:
+                await self.__update_board__(
+                    letters_class_attributes[i], letters_text[i], i
+                )
 
     def __choose_word__(self) -> str:
         guesses = [
@@ -101,8 +113,6 @@ class Solver:
         self.web_boards = await page.locator(".board").all()
 
         while len(await page.locator(".mantine-Overlay-root").all()) == 0:
-            print(8, time.time() * 1000)
             guess = self.__choose_word__()
             await self.__send_word__(guess, page)
             await self.__scan_boards__()
-            print(7, time.time() * 1000)
