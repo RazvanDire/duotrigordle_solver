@@ -8,7 +8,6 @@ class BoardInfo:
         self.greens: Dict[int, str] = {}
         self.yellows: Set[Tuple[str, int]] = set()
         self.grays: Set[str] = set()
-        self.won = False
         self.possible_guesses = WORDS_TARGET.copy()
         self.letter_ranking = heuristic.rank_letters(self.possible_guesses)
 

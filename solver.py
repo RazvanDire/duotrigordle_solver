@@ -4,6 +4,8 @@ from wordlist import WORDS_TARGET
 from typing import List, Dict, Tuple
 from heuristics.base import Heuristic
 from board_info import BoardInfo
+import time
+
 
 class Solver:
     GREEN = "bg-[#49d088]"
@@ -16,10 +18,12 @@ class Solver:
         self.boards = [BoardInfo(heuristic) for i in range(32)]
         self.web_boards = []
         self.heuristic = heuristic
+        self.guess_count = 0
 
     async def __send_word__(self, word: str, page: Page) -> None:
         await page.keyboard.type(word)
         await page.keyboard.press("Enter")
+        self.guess_count += 1
 
     async def __update_board__(
         self, letter_class_attributes, letter_text, board_index: int
@@ -58,6 +62,18 @@ class Solver:
             )
 
     async def __scan_boards__(self) -> None:
+        pop_list = [
+            index
+            for index in range(len(self.boards))
+            if "opacity-25" in await self.web_boards[index].get_attribute("class")
+        ]
+
+        for i in pop_list:
+            self.boards.pop(i)
+            self.web_boards.pop(i)
+
+        board_count = len(self.boards)
+
         last_guesses = await asyncio.gather(
             *[board.locator(".word").all() for board in self.web_boards]
         )
@@ -81,18 +97,18 @@ class Solver:
         )
 
         letters_class_attributes = [
-            [letters_info[i + j * 32] for j in range(5)] for i in range(32)
+            [letters_info[i + j * board_count] for j in range(5)]
+            for i in range(board_count)
         ]
         letters_text = [
-            [letters_info[i + (j + 5) * 32][0] for j in range(5)] for i in range(32)
+            [letters_info[i + (j + 5) * board_count][0] for j in range(5)]
+            for i in range(board_count)
         ]
 
-        for i in range(32):
-            if "opacity-25" in await self.web_boards[i].get_attribute("class"):
-                self.boards[i].won = True
-            if not self.boards[i].won and len(self.boards[i].possible_guesses) > 1:
+        for index in range(board_count):
+            if len(self.boards[index].possible_guesses) > 1:
                 await self.__update_board__(
-                    letters_class_attributes[i], letters_text[i], i
+                    letters_class_attributes[index], letters_text[index], index
                 )
 
     def __choose_word__(self) -> str:
@@ -101,7 +117,6 @@ class Solver:
             for guess in [
                 self.heuristic.rank_words(board.possible_guesses, board.letter_ranking)
                 for board in self.boards
-                if not board.won
             ]
         ]
         return max(guesses, key=lambda elem: elem[1])[0]
