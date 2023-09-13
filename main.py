@@ -8,7 +8,7 @@ async def main():
 	async with async_playwright() as p:
 		solver = Solver("https://duotrigordle-kappa.vercel.app/", p, LetterEntropy())
 		await solver.solve()
-		time.sleep(10)
+		time.sleep(5)
 
 if __name__ == "__main__":
 	asyncio.run(main())	

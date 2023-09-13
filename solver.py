@@ -1,11 +1,8 @@
 import asyncio
-from playwright.async_api import async_playwright, Playwright, Locator, Page
-from wordlist import WORDS_TARGET
-from typing import List, Dict, Tuple
+from playwright.async_api import Playwright, Locator, Page
+from typing import List, Tuple
 from heuristics.base import Heuristic
 from board_info import BoardInfo
-import time
-
 
 class Solver:
     GREEN = "bg-[#49d088]"
@@ -18,12 +15,44 @@ class Solver:
         self.boards = [BoardInfo(heuristic) for i in range(32)]
         self.web_boards = []
         self.heuristic = heuristic
-        self.guess_count = 0
 
     async def __send_word__(self, word: str, page: Page) -> None:
         await page.keyboard.type(word)
         await page.keyboard.press("Enter")
-        self.guess_count += 1
+
+    async def __get_letters_info__(self, board_count) -> Tuple[List[List], List[List]]:
+        last_guesses = await asyncio.gather(
+            *[board.locator(".word").all() for board in self.web_boards]
+        )
+        last_guesses = [guess[-2] for guess in last_guesses]
+
+        letters = await asyncio.gather(
+            *[Locator(guess).locator(".letter").all() for guess in last_guesses]
+        )
+
+        letters_info = await asyncio.gather(
+            *[Locator(letter[0]).get_attribute("class") for letter in letters],
+            *[Locator(letter[1]).get_attribute("class") for letter in letters],
+            *[Locator(letter[2]).get_attribute("class") for letter in letters],
+            *[Locator(letter[3]).get_attribute("class") for letter in letters],
+            *[Locator(letter[4]).get_attribute("class") for letter in letters],
+            *[Locator(letter[0]).all_inner_texts() for letter in letters],
+            *[Locator(letter[1]).all_inner_texts() for letter in letters],
+            *[Locator(letter[2]).all_inner_texts() for letter in letters],
+            *[Locator(letter[3]).all_inner_texts() for letter in letters],
+            *[Locator(letter[4]).all_inner_texts() for letter in letters]
+        )
+
+        letters_class_attributes = [
+            [letters_info[i + j * board_count] for j in range(5)]
+            for i in range(board_count)
+        ]
+        letters_text = [
+            [letters_info[i + (j + 5) * board_count][0] for j in range(5)]
+            for i in range(board_count)
+        ]
+
+        return (letters_class_attributes, letters_text)
 
     async def __update_board__(
         self, letter_class_attributes, letter_text, board_index: int
@@ -61,52 +90,40 @@ class Solver:
                 board_info.possible_guesses
             )
 
-    async def __scan_boards__(self) -> None:
-        pop_list = [
-            index
-            for index in range(len(self.boards))
-            if "opacity-25" in await self.web_boards[index].get_attribute("class")
-        ]
+    async def __scan_boards__(self, page: Page) -> None:
+        one_word_list = []
+        pop_list = []
 
+        for index in range(len(self.boards)):
+            if "opacity-25" in await self.web_boards[index].get_attribute("class"):
+                pop_list.append(index)
+            elif len(self.boards[index].possible_guesses) == 1:
+                pop_list.append(index)
+                one_word_list.append(self.boards[index].possible_guesses[0])
+
+        pop_list.reverse()
         for i in pop_list:
             self.boards.pop(i)
             self.web_boards.pop(i)
 
         board_count = len(self.boards)
-
-        last_guesses = await asyncio.gather(
-            *[board.locator(".word").all() for board in self.web_boards]
-        )
-        last_guesses = [guess[-2] for guess in last_guesses]
-
-        letters = await asyncio.gather(
-            *[Locator(guess).locator(".letter").all() for guess in last_guesses]
-        )
-
-        letters_info = await asyncio.gather(
-            *[Locator(letter[0]).get_attribute("class") for letter in letters],
-            *[Locator(letter[1]).get_attribute("class") for letter in letters],
-            *[Locator(letter[2]).get_attribute("class") for letter in letters],
-            *[Locator(letter[3]).get_attribute("class") for letter in letters],
-            *[Locator(letter[4]).get_attribute("class") for letter in letters],
-            *[Locator(letter[0]).all_inner_texts() for letter in letters],
-            *[Locator(letter[1]).all_inner_texts() for letter in letters],
-            *[Locator(letter[2]).all_inner_texts() for letter in letters],
-            *[Locator(letter[3]).all_inner_texts() for letter in letters],
-            *[Locator(letter[4]).all_inner_texts() for letter in letters]
-        )
-
-        letters_class_attributes = [
-            [letters_info[i + j * board_count] for j in range(5)]
-            for i in range(board_count)
-        ]
-        letters_text = [
-            [letters_info[i + (j + 5) * board_count][0] for j in range(5)]
-            for i in range(board_count)
-        ]
+        letters_info = await self.__get_letters_info__(board_count)
+        letters_class_attributes = letters_info[0]
+        letters_text = letters_info[1]
 
         for index in range(board_count):
-            if len(self.boards[index].possible_guesses) > 1:
+            await self.__update_board__(
+                letters_class_attributes[index], letters_text[index], index
+            )
+
+        for guess in one_word_list:
+            await self.__send_word__(guess, page)
+
+            letters_info = await self.__get_letters_info__(board_count)
+            letters_class_attributes = letters_info[0]
+            letters_text = letters_info[1]
+
+            for index in range(board_count):
                 await self.__update_board__(
                     letters_class_attributes[index], letters_text[index], index
                 )
@@ -130,4 +147,4 @@ class Solver:
         while len(await page.locator(".mantine-Overlay-root").all()) == 0:
             guess = self.__choose_word__()
             await self.__send_word__(guess, page)
-            await self.__scan_boards__()
+            await self.__scan_boards__(page)
