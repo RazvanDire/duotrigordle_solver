@@ -4,6 +4,7 @@ from typing import List, Tuple
 from heuristics.base import Heuristic
 from board_info import BoardInfo
 
+
 class Solver:
     GREEN = "bg-[#49d088]"
     YELLOW = "bg-[#eabf3e]"
@@ -20,7 +21,7 @@ class Solver:
         await page.keyboard.type(word)
         await page.keyboard.press("Enter")
 
-    async def __get_letters_info__(self, board_count) -> Tuple[List[List], List[List]]:
+    async def __get_letters_info__(self, board_count) -> List[List[Locator]]:
         last_guesses = await asyncio.gather(
             *[board.locator(".word").all() for board in self.web_boards]
         )
@@ -30,35 +31,19 @@ class Solver:
             *[Locator(guess).locator(".letter").all() for guess in last_guesses]
         )
 
+        return letters
+
+    async def __update_board__(self, letters: List[Locator], board_index: int) -> None:
         letters_info = await asyncio.gather(
-            *[Locator(letter[0]).get_attribute("class") for letter in letters],
-            *[Locator(letter[1]).get_attribute("class") for letter in letters],
-            *[Locator(letter[2]).get_attribute("class") for letter in letters],
-            *[Locator(letter[3]).get_attribute("class") for letter in letters],
-            *[Locator(letter[4]).get_attribute("class") for letter in letters],
-            *[Locator(letter[0]).all_inner_texts() for letter in letters],
-            *[Locator(letter[1]).all_inner_texts() for letter in letters],
-            *[Locator(letter[2]).all_inner_texts() for letter in letters],
-            *[Locator(letter[3]).all_inner_texts() for letter in letters],
-            *[Locator(letter[4]).all_inner_texts() for letter in letters]
+            *[letter.all_inner_texts() for letter in letters],
+            *[letter.get_attribute("class") for letter in letters]
         )
 
-        letters_class_attributes = [
-            [letters_info[i + j * board_count] for j in range(5)]
-            for i in range(board_count)
-        ]
-        letters_text = [
-            [letters_info[i + (j + 5) * board_count][0] for j in range(5)]
-            for i in range(board_count)
-        ]
+        letter_text = letters_info[:5]
+        letter_class_attributes = letters_info[5:]
 
-        return (letters_class_attributes, letters_text)
-
-    async def __update_board__(
-        self, letter_class_attributes, letter_text, board_index: int
-    ) -> None:
         for index in range(5):
-            text = letter_text[index]
+            text = letter_text[index][0]
             classes = letter_class_attributes[index]
 
             if self.GREEN in classes:
@@ -67,7 +52,7 @@ class Solver:
                 self.boards[board_index].yellows.add((text, index))
 
         for index in range(5):
-            text = letter_text[index]
+            text = letter_text[index][0]
             classes = letter_class_attributes[index]
 
             if self.GRAY in classes:
@@ -107,25 +92,20 @@ class Solver:
             self.web_boards.pop(i)
 
         board_count = len(self.boards)
-        letters_info = await self.__get_letters_info__(board_count)
-        letters_class_attributes = letters_info[0]
-        letters_text = letters_info[1]
+        letters = await self.__get_letters_info__(board_count)
 
         for index in range(board_count):
             await self.__update_board__(
-                letters_class_attributes[index], letters_text[index], index
+                letters[index], index
             )
 
         for guess in one_word_list:
             await self.__send_word__(guess, page)
 
-            letters_info = await self.__get_letters_info__(board_count)
-            letters_class_attributes = letters_info[0]
-            letters_text = letters_info[1]
-
+            letters = await self.__get_letters_info__(board_count)
             for index in range(board_count):
                 await self.__update_board__(
-                    letters_class_attributes[index], letters_text[index], index
+                    letters[index], index
                 )
 
     def __choose_word__(self) -> str:
