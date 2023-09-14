@@ -1,6 +1,7 @@
 import time
 from solver import Solver
 from heuristics.letter_entropy import LetterEntropy
+from heuristics.information_theory import InformationTheory
 import asyncio
 from playwright.async_api import async_playwright
 
